@@ -21,9 +21,13 @@ def run(server, token, userlist, someday):
                       "flags": 5,
                       "from": 0,
                       "to": 0}
-            r = pywlapi.request(host=server, svc=svc, params=params, eid=eid)
-            print(r)
-            id = r['items'][0]['bact']
+            items = pywlapi.request(host=server, svc=svc, params=params, eid=eid)['items']
+            print(items)
+            for item in items:
+                if user == item['nm']:
+                    id = item['bact']
+                if id == '':
+                    raise IndexError
             svc = 'account/get_account_data'
             params = {"itemId": id, "type": ""}
             days_counter = pywlapi.request(host=server, svc=svc, params=params, eid=eid)['daysCounter']
@@ -50,6 +54,9 @@ def run(server, token, userlist, someday):
             else:
                 err.append(user)
         except IndexError as ex:
+            print(ex)
+            err.append(user)
+        except UnboundLocalError as ex:
             print(ex)
             err.append(user)
     ok_str = f'<b>Updated to {someday}:</b>\n\n' + '\n'.join(ok)
