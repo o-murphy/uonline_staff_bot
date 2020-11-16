@@ -23,6 +23,10 @@ def run(server, token, userlist, someday):
                       "to": 0}
             items = pywlapi.request(host=server, svc=svc, params=params, eid=eid)['items']
             print(items)
+            empty = []
+            if items == empty:
+                raise IndexError
+            id = ''
             for item in items:
                 if user == item['nm']:
                     id = item['bact']
