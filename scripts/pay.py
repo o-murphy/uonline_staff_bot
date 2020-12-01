@@ -1,6 +1,7 @@
 from scripts import pywlapi
 from datetime import datetime
 
+
 def run(server, token, userlist, someday):
     some_day = datetime.strptime(someday, '%d.%m.%Y')
     now = datetime.now()
