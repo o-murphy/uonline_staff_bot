@@ -15,11 +15,12 @@ admin = config['admins']
 admin_group = config['group']
 staff = config['staff']
 hosts = config['servers']
+tech = config['tech']
 
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
-    if message.from_user.id in staff:
+    if message.from_user.id in staff or message.chat.id == tech:
         if re.search('/start', message.text):
             start(message)
 
@@ -35,12 +36,24 @@ def start(message):
                      reply_markup=kb)
 
 
+@bot.callback_query_handler(lambda call: call.data == 'close')
+def close(call):
+    try:
+        if call.from_user.id in staff or call.message.chat.id == tech:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception as exc:
+        print(exc)
+
+
 @bot.callback_query_handler(lambda call: re.search('server_', call.data))
 def options(call):
-    if call.from_user.id in staff:
+    if call.from_user.id in staff or call.message.chat.id == tech:
         with open(f'cookies/{call.from_user.id}.cookie', 'w') as cookie:
             cookie.write(re.sub('server_', '', call.data))
-        bot.send_message(call.message.chat.id, 'Change command:\n/updateaccess - Обновить доступ')
+        bot.send_message(call.message.chat.id,
+                         'Выбери команду:'
+                         '\n/updateaccess - Обновить доступ'
+                         '\n/license - Обновить лицензии')
 
 
 @bot.message_handler(commands=['updateaccess'])
@@ -49,52 +62,67 @@ def updateaccess_cmd(message):
         kb = types.InlineKeyboardMarkup(row_width=6)
         now = datetime.now()
         now_year = now.year
-        kb.row(types.InlineKeyboardButton(text=now_year, callback_data=f'year_{now_year}'),
-               types.InlineKeyboardButton(text=now_year+1, callback_data=f'year_{now_year+1}'))
-        bot.send_message(message.chat.id, 'Change year', reply_markup=kb)
+        row = list()
+        for i in range(0, 3):
+            row.append(types.InlineKeyboardButton(text=now_year+i,
+                                                  callback_data=f'year_{now_year+i}'))
+        row.append(types.InlineKeyboardButton(text='Закрыть',
+                                              callback_data='close'))
+        kb.add(*row)
+        bot.send_message(message.chat.id, 'Выберите год', reply_markup=kb)
 
 
-@bot.callback_query_handler(lambda call: re.search('^year_', call.data))
+@bot.callback_query_handler(lambda call: re.search(r'^year_', call.data))
 def updateaccess_month(call):
     if call.from_user.id in staff:
         kb = types.InlineKeyboardMarkup(row_width=6)
         now = datetime.now()
-        now_month = now.month
+        now_year = now.year
         row = list()
-        for i in range(now_month, 13):
+        year = re.sub(r'year_', '', call.data)
+
+        if now_year == int(year):
+            month = now.month
+        else:
+            month = 1
+        for i in range(month, 13):
             row.append(types.InlineKeyboardButton(text=i, callback_data=f'month_{i}_{call.data}'))
+        row.append(types.InlineKeyboardButton(text='Закрыть',
+                                              callback_data='close'))
         kb.add(*row)
-        bot.edit_message_text('Change month', call.message.chat.id, call.message.message_id)
+        bot.edit_message_text(f'{year}\nВыберите месяц', call.message.chat.id, call.message.message_id)
         bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=kb)
 
 
-@bot.callback_query_handler(lambda call: re.search('^month_', call.data))
+@bot.callback_query_handler(lambda call: re.search(r'^month_', call.data))
 def updateaccess_day(call):
     if call.from_user.id in staff:
         kb = types.InlineKeyboardMarkup(row_width=6)
-        month = re.search('(\d+)', re.sub('_year_(\d+$)', '', call.data)).group()
-        year = re.search('(\d+$)', call.data).group()
+        month = re.search(r'(\d+)', re.sub(r'_year_(\d+$)', '', call.data)).group()
+        year = re.search(r'(\d+$)', call.data).group()
         now = datetime.now()
-        last_day = calendar.monthrange(int(year), int(month))[1]
         row = list()
-        if int(month) == now.month:
+        last_day = calendar.monthrange(int(year), int(month))[1]
+        if int(month) == now.month and int(year) == now.year:
             first_day = now.day
         else:
             first_day = 1
-
         for i in range(first_day, last_day+1):
             row.append(types.InlineKeyboardButton(text=i,
                                                   callback_data=f'day_{i}.{month}.{year}'))
+        row.append(types.InlineKeyboardButton(text='Закрыть',
+                                              callback_data='close'))
         kb.add(*row)
-        bot.edit_message_text('Change day', call.message.chat.id, call.message.message_id)
+        msg_text = f'{year} / {month}\nВыберите день'
+        bot.edit_message_text(msg_text, call.message.chat.id, call.message.message_id)
         bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=kb)
 
 
-@bot.callback_query_handler(lambda call: re.search('^day_', call.data))
+@bot.callback_query_handler(lambda call: re.search(r'^day_', call.data))
 def updateaccess_list(call):
     if call.from_user.id in staff:
-        some_day = re.sub('day_', '', call.data)
-        bot.edit_message_text('Send list', call.message.chat.id, call.message.message_id)
+        some_day = re.sub(r'day_', '', call.data)
+        bot.send_message(call.message.chat.id, 'Отправте список')
         bot.register_next_step_handler(call.message, updateaccess_func, some_day)
 
 
@@ -111,9 +139,7 @@ def updateaccess_func(message, some_day):
                     host = cookie.read()
                     token = hosts[host]['token']
                 try:
-
                     payments = pay.run(server=host, token=token, userlist=userlist, someday=some_day)
-                    print(payments)
                     bot.send_message(message.chat.id, payments, parse_mode='HTML')
                 except Exception as ex:
                     print(ex)
@@ -126,7 +152,7 @@ def updateaccess_func(message, some_day):
 
 @bot.message_handler(commands=['license'])
 def license_cmd(message):
-    if message.from_user.id in staff and re.search('/license', message.text):
+    if message.chat.id == tech and re.search('/license', message.text):
         license_start(message)
 
 
@@ -142,22 +168,22 @@ def account_func(message):
             host = cookie.read()
             token = hosts[host]['token']
             try:
-                id = license_adder.getacc(host, token, account)
-            except Exception as e:
-                print(e)
-                id = 'wrong'
-            if id == 'wrong':
+                sid = license_adder.getacc(host, token, account)
+            except Exception as exc:
+                print(exc)
+                sid = 'wrong'
+            if sid == 'wrong':
                 bot.send_message(message.chat.id, 'wrong login')
-                license_start(message)
+                start(message)
             else:
                 bot.send_message(message.chat.id, 'how many?')
-                bot.register_next_step_handler(message, license_func, id)
-    except FileNotFoundError as e:
-        print(e)
+                bot.register_next_step_handler(message, license_func, sid)
+    except FileNotFoundError as exc:
+        print(exc)
         start(message)
 
 
-def license_func(message, id):
+def license_func(message, sid):
     add = message.text
     try:
         with open(f'cookies/{message.from_user.id}.cookie', 'r') as cookie:
@@ -166,14 +192,14 @@ def license_func(message, id):
             try:
                 add = int(add)
                 if isinstance(add, int):
-                    total = license_adder.adder(host, token, id, add)
+                    total = license_adder.adder(host, token, sid, add)
                     bot.send_message(message.chat.id, f'success {total}')
-            except Exception as e:
-                print(e)
+            except Exception as exc:
+                print(exc)
                 bot.send_message(message.chat.id, 'wrong adder')
-                license_start(message)
-    except FileNotFoundError as e:
-        print(e)
+                start(message)
+    except FileNotFoundError as exc:
+        print(exc)
         start(message)
 
 
